@@ -1413,11 +1413,25 @@
     
     <!-- JavaScript -->
     <script>
-        // Хранение данных на сервере (эмуляция)
+        // Хранение данных с глобальной синхронизацией
         class ServerStorage {
             constructor() {
                 this.storageKey = 'donwin_server_data';
+                this.globalDataKey = 'donwin_global_settings';
+                this.globalTriggerKey = 'donwin_global_trigger';
+                this.lastGlobalCheck = 0;
+                this.checkInterval = 3000; // Проверять каждые 3 секунды
+                
                 this.loadFromStorage();
+                
+                // Запускаем периодическую проверку
+                setInterval(() => this.checkForGlobalUpdates(), this.checkInterval);
+                
+                // Слушаем события страницы
+                this.setupEventListeners();
+                
+                // Проверяем сразу при загрузке
+                setTimeout(() => this.checkForGlobalUpdates(), 1000);
             }
             
             loadFromStorage() {
@@ -1431,14 +1445,110 @@
                         winChance: 35,
                         newUserBalance: 1000,
                         suspendedTime: '',
-                        lastUpdate: Date.now()
+                        lastUpdated: Date.now(),
+                        lastSynced: 0
                     };
-                    this.saveToStorage();
+                    this.saveToLocalStorage();
                 }
             }
             
-            saveToStorage() {
-                this.data.lastUpdate = Date.now();
+            setupEventListeners() {
+                // Обновляем при фокусе на окне
+                window.addEventListener('focus', () => {
+                    setTimeout(() => this.checkForGlobalUpdates(), 500);
+                });
+                
+                // Обновляем при клике (активности пользователя)
+                document.addEventListener('click', () => {
+                    setTimeout(() => this.checkForGlobalUpdates(), 300);
+                });
+            }
+            
+            checkForGlobalUpdates() {
+                const now = Date.now();
+                
+                // Проверяем не чаще чем раз в 1 секунду
+                if (now - this.lastGlobalCheck < 1000) return;
+                this.lastGlobalCheck = now;
+                
+                try {
+                    // Проверяем триггер (быстрая проверка изменений)
+                    const trigger = localStorage.getItem(this.globalTriggerKey);
+                    if (trigger) {
+                        const triggerTime = parseInt(trigger);
+                        if (triggerTime > (this.data.lastSynced || 0)) {
+                            this.loadGlobalSettings();
+                        }
+                    }
+                    
+                    // Загружаем глобальные настройки
+                    const globalData = localStorage.getItem(this.globalDataKey);
+                    if (globalData) {
+                        const parsed = JSON.parse(globalData);
+                        
+                        // Если глобальные данные новее наших
+                        if (parsed.lastUpdated > (this.data.lastUpdated || 0)) {
+                            console.log('⚡ Обнаружены новые глобальные настройки');
+                            
+                            // Обновляем все глобальные настройки
+                            const oldSiteSuspended = this.data.siteSuspended;
+                            
+                            this.data.siteSuspended = parsed.siteSuspended;
+                            this.data.withdrawEnabled = parsed.withdrawEnabled;
+                            this.data.winChance = parsed.winChance;
+                            this.data.newUserBalance = parsed.newUserBalance;
+                            this.data.suspendedTime = parsed.suspendedTime;
+                            this.data.lastUpdated = parsed.lastUpdated;
+                            this.data.lastSynced = now;
+                            
+                            this.saveToLocalStorage();
+                            this.applyGlobalSettings();
+                            
+                            // Уведомляем пользователя если статус сайта изменился
+                            if (oldSiteSuspended !== this.data.siteSuspended) {
+                                const message = this.data.siteSuspended 
+                                    ? '⚠️ Сайт приостановлен администратором' 
+                                    : '✅ Сайт снова активен';
+                                showNotification(message, this.data.siteSuspended ? 'error' : 'success');
+                            }
+                            
+                            // Обновляем админ панель если она открыта
+                            if (window.adminSystem && document.getElementById('adminOverlay').style.display === 'flex') {
+                                window.adminSystem.loadAdminStats();
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error('Ошибка при проверке глобальных обновлений:', error);
+                }
+            }
+            
+            loadGlobalSettings() {
+                try {
+                    const globalData = localStorage.getItem(this.globalDataKey);
+                    if (globalData) {
+                        const parsed = JSON.parse(globalData);
+                        
+                        // Обновляем только если глобальные данные новее
+                        if (parsed.lastUpdated > this.data.lastUpdated) {
+                            this.data.siteSuspended = parsed.siteSuspended;
+                            this.data.withdrawEnabled = parsed.withdrawEnabled;
+                            this.data.winChance = parsed.winChance;
+                            this.data.newUserBalance = parsed.newUserBalance;
+                            this.data.suspendedTime = parsed.suspendedTime;
+                            this.data.lastUpdated = parsed.lastUpdated;
+                            this.data.lastSynced = Date.now();
+                            
+                            this.saveToLocalStorage();
+                            this.applyGlobalSettings();
+                        }
+                    }
+                } catch (error) {
+                    console.error('Ошибка при загрузке глобальных настроек:', error);
+                }
+            }
+            
+            saveToLocalStorage() {
                 localStorage.setItem(this.storageKey, JSON.stringify(this.data));
             }
             
@@ -1447,18 +1557,80 @@
             }
             
             set(key, value) {
+                const oldValue = this.data[key];
                 this.data[key] = value;
-                this.saveToStorage();
-                // Симуляция синхронизации между устройствами
-                this.syncAcrossDevices();
+                this.data.lastUpdated = Date.now();
+                
+                // Для глобальных настроек обновляем общий ключ
+                const globalKeys = ['siteSuspended', 'withdrawEnabled', 'winChance', 'newUserBalance', 'suspendedTime'];
+                if (globalKeys.includes(key)) {
+                    this.updateGlobalSettings();
+                    
+                    // Логируем изменение
+                    console.log(`🔧 Глобальная настройка изменена: ${key} = ${value} (было: ${oldValue})`);
+                }
+                
+                this.saveToLocalStorage();
                 return true;
             }
             
-            syncAcrossDevices() {
-                // В реальном приложении здесь был бы запрос к серверу
-                // Для демо просто сохраняем в localStorage
-                // Все устройства читают из одного источника
-                console.log('Данные синхронизированы на всех устройствах');
+            updateGlobalSettings() {
+                // Создаем объект глобальных настроек
+                const globalData = {
+                    siteSuspended: this.data.siteSuspended,
+                    withdrawEnabled: this.data.withdrawEnabled,
+                    winChance: this.data.winChance,
+                    newUserBalance: this.data.newUserBalance,
+                    suspendedTime: this.data.suspendedTime,
+                    lastUpdated: this.data.lastUpdated,
+                    updatedBy: userSystem.currentUser ? userSystem.currentUser.username : 'admin',
+                    updatedAt: new Date().toLocaleString('ru-RU')
+                };
+                
+                // Сохраняем в глобальный ключ
+                localStorage.setItem(this.globalDataKey, JSON.stringify(globalData));
+                
+                // Устанавливаем триггер для быстрого обновления на других устройствах
+                localStorage.setItem(this.globalTriggerKey, Date.now().toString());
+                
+                // Дополнительная синхронизация
+                setTimeout(() => {
+                    localStorage.setItem(this.globalTriggerKey, Date.now().toString());
+                }, 1000);
+            }
+            
+            applyGlobalSettings() {
+                // Применяем глобальные настройки на текущем устройстве
+                const siteSuspendedElem = document.getElementById('siteSuspended');
+                const suspendedTimeElem = document.getElementById('suspendedTime');
+                
+                if (this.data.siteSuspended) {
+                    if (siteSuspendedElem) {
+                        siteSuspendedElem.style.display = 'flex';
+                    }
+                    if (suspendedTimeElem) {
+                        suspendedTimeElem.textContent = this.data.suspendedTime;
+                    }
+                } else {
+                    if (siteSuspendedElem) {
+                        siteSuspendedElem.style.display = 'none';
+                    }
+                }
+                
+                // Обновляем состояние игр
+                const playButtons = document.querySelectorAll('.play-btn');
+                playButtons.forEach(btn => {
+                    if (this.data.siteSuspended && userSystem.currentUser) {
+                        btn.disabled = true;
+                        btn.innerHTML = '<i class="fas fa-pause"></i> Приостановлено';
+                    } else if (!userSystem.currentUser) {
+                        btn.disabled = true;
+                        btn.innerHTML = '<i class="fas fa-play"></i> Играть';
+                    } else {
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="fas fa-play"></i> Играть';
+                    }
+                });
             }
             
             getAll() {
@@ -1616,15 +1788,25 @@
                     document.getElementById('displayUsername').textContent = this.currentUser.username;
                     document.getElementById('displayBalance').textContent = this.currentUser.balance;
                     
-                    playButtons.forEach(btn => {
-                        btn.disabled = false;
-                    });
+                    // Проверяем статус сайта
+                    if (serverStorage.get('siteSuspended')) {
+                        playButtons.forEach(btn => {
+                            btn.disabled = true;
+                            btn.innerHTML = '<i class="fas fa-pause"></i> Приостановлено';
+                        });
+                    } else {
+                        playButtons.forEach(btn => {
+                            btn.disabled = false;
+                            btn.innerHTML = '<i class="fas fa-play"></i> Играть';
+                        });
+                    }
                 } else {
                     userPanel.style.display = 'none';
                     authButtons.style.display = 'flex';
                     
                     playButtons.forEach(btn => {
                         btn.disabled = true;
+                        btn.innerHTML = '<i class="fas fa-play"></i> Играть';
                     });
                 }
             }
@@ -2415,7 +2597,9 @@
                 });
                 
                 document.getElementById('activateSiteBtn').addEventListener('click', () => {
-                    this.activateSite();
+                    if (confirm('Активировать сайт для ВСЕХ пользователей?')) {
+                        this.activateSite();
+                    }
                 });
                 
                 document.getElementById('disableWithdrawBtn').addEventListener('click', () => {
@@ -2524,6 +2708,9 @@
                 document.getElementById('siteStatus').style.color = '#ff0000';
                 document.getElementById('suspendSiteBtn').style.display = 'none';
                 document.getElementById('activateSiteBtn').style.display = 'block';
+                
+                // Обновляем UI
+                serverStorage.applyGlobalSettings();
             }
             
             activateSite() {
@@ -2536,6 +2723,9 @@
                 document.getElementById('siteStatus').style.color = '#33cc33';
                 document.getElementById('suspendSiteBtn').style.display = 'block';
                 document.getElementById('activateSiteBtn').style.display = 'none';
+                
+                // Обновляем UI
+                serverStorage.applyGlobalSettings();
             }
             
             toggleWithdraw(enable) {
@@ -2607,6 +2797,8 @@
                     localStorage.removeItem('donwin_users');
                     localStorage.removeItem('donwin_current_user');
                     localStorage.removeItem('donwin_server_data');
+                    localStorage.removeItem('donwin_global_settings');
+                    localStorage.removeItem('donwin_global_trigger');
                     window.location.reload();
                 }
             }
@@ -2758,6 +2950,9 @@
             } else if (type === 'error') {
                 notification.style.background = 'rgba(255, 50, 0, 0.9)';
                 notification.style.borderColor = 'rgba(255, 100, 0, 0.5)';
+            } else if (type === 'info') {
+                notification.style.background = 'rgba(0, 100, 255, 0.9)';
+                notification.style.borderColor = 'rgba(0, 150, 255, 0.5)';
             }
             
             document.body.appendChild(notification);
@@ -2775,7 +2970,14 @@
             // Создаем демо-пользователя
             if (Object.keys(userSystem.users).length === 0) {
                 userSystem.register('demo', 'demo@donwin.com', 'demo123');
+                showNotification('👋 Демо-пользователь создан: demo / demo123', 'info');
             }
+            
+            // Применяем глобальные настройки при загрузке
+            setTimeout(() => {
+                serverStorage.applyGlobalSettings();
+                serverStorage.checkForGlobalUpdates();
+            }, 500);
             
             // Адаптивная статистика
             setInterval(() => {
@@ -2806,6 +3008,11 @@
                 if (totalPlayers) {
                     totalPlayers.textContent = '50K+';
                 }
+                
+                // Периодически проверяем глобальные настройки
+                if (Math.random() < 0.1) { // 10% шанс каждый интервал
+                    serverStorage.checkForGlobalUpdates();
+                }
             }, 5000);
             
             // Адаптация для сенсорных устройств
@@ -2816,7 +3023,17 @@
                     el.style.touchAction = 'manipulation';
                 });
             }
+            
+            // Информация о глобальной синхронизации
+            console.log('🌐 DONWIN Platform загружен');
+            console.log('Глобальная синхронизация настроек активна');
+            console.log('Проверка обновлений каждые 3 секунды');
         });
+        
+        // Экспортируем для отладки
+        window.serverStorage = serverStorage;
+        window.userSystem = userSystem;
+        window.gameSystem = gameSystem;
     </script>
 </body>
 </html>
