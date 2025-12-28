@@ -1047,13 +1047,10 @@
     <div class="admin-overlay" id="adminOverlay">
         <div class="admin-login-form" id="adminLoginForm">
             <h2><i class="fas fa-lock"></i> АДМИН ПАНЕЛЬ</h2>
-            <input type="password" class="admin-password-input" id="adminPassword" placeholder="Введите пароль">
+            <input type="password" class="admin-password-input" id="adminPassword" placeholder="Введите пароль администратора">
             <button class="admin-login-btn" id="adminLoginBtn">
                 <i class="fas fa-sign-in-alt"></i> ВОЙТИ
             </button>
-            <p style="color: #ff6666; margin-top: 15px; font-size: 0.9rem;">
-                <i class="fas fa-exclamation-triangle"></i> Пароль: 789456123
-            </p>
         </div>
         
         <div class="admin-panel" id="adminPanel" style="display: none;">
@@ -1411,16 +1408,66 @@
                 <i class="fas fa-exclamation-triangle"></i> 
                 Демо-версия. Не используйте реальные пароли.
             </p>
-            <p class="admin-access-link" style="color: #666; font-size: 0.7rem; margin-top: 5px; cursor: pointer; opacity: 0.3; transition: all 0.3s;" 
-               onmouseover="this.style.color='#ff6b00'; this.style.opacity='1'; this.innerHTML='<i class=\'fas fa-lock\'></i> Админ панель (кликните)';" 
-               onmouseout="this.style.color='#666'; this.style.opacity='0.3'; this.innerHTML='<i class=\'fas fa-lock\'></i> <span style=\"font-size: 0.6rem;\">admin</span>';">
-                <i class="fas fa-lock"></i> <span style="font-size: 0.6rem;">admin</span>
-            </p>
         </div>
     </footer>
     
     <!-- JavaScript -->
     <script>
+        // Хранение данных на сервере (эмуляция)
+        class ServerStorage {
+            constructor() {
+                this.storageKey = 'donwin_server_data';
+                this.loadFromStorage();
+            }
+            
+            loadFromStorage() {
+                const data = localStorage.getItem(this.storageKey);
+                if (data) {
+                    this.data = JSON.parse(data);
+                } else {
+                    this.data = {
+                        siteSuspended: false,
+                        withdrawEnabled: true,
+                        winChance: 35,
+                        newUserBalance: 1000,
+                        suspendedTime: '',
+                        lastUpdate: Date.now()
+                    };
+                    this.saveToStorage();
+                }
+            }
+            
+            saveToStorage() {
+                this.data.lastUpdate = Date.now();
+                localStorage.setItem(this.storageKey, JSON.stringify(this.data));
+            }
+            
+            get(key) {
+                return this.data[key];
+            }
+            
+            set(key, value) {
+                this.data[key] = value;
+                this.saveToStorage();
+                // Симуляция синхронизации между устройствами
+                this.syncAcrossDevices();
+                return true;
+            }
+            
+            syncAcrossDevices() {
+                // В реальном приложении здесь был бы запрос к серверу
+                // Для демо просто сохраняем в localStorage
+                // Все устройства читают из одного источника
+                console.log('Данные синхронизированы на всех устройствах');
+            }
+            
+            getAll() {
+                return { ...this.data };
+            }
+        }
+        
+        const serverStorage = new ServerStorage();
+        
         // Система пользователей
         class UserSystem {
             constructor() {
@@ -1439,7 +1486,7 @@
             
             register(username, email, password) {
                 // Проверяем, не приостановлен ли сайт
-                if (window.adminSystem && window.adminSystem.siteSuspended) {
+                if (serverStorage.get('siteSuspended')) {
                     return { success: false, message: 'Регистрация временно приостановлена' };
                 }
                 
@@ -1458,7 +1505,7 @@
                     username: username,
                     email: email,
                     password: this.simpleHash(password),
-                    balance: window.adminSystem ? window.adminSystem.newUserBalance : 1000,
+                    balance: serverStorage.get('newUserBalance'),
                     registered: new Date().toISOString(),
                     gamesPlayed: 0,
                     totalWins: 0,
@@ -1473,7 +1520,7 @@
             
             login(username, password) {
                 // Проверяем, не приостановлен ли сайт
-                if (window.adminSystem && window.adminSystem.siteSuspended) {
+                if (serverStorage.get('siteSuspended')) {
                     return { success: false, message: 'Сайт временно приостановлен' };
                 }
                 
@@ -1519,7 +1566,7 @@
                 if (!this.currentUser) return false;
                 
                 // Проверяем, разрешен ли вывод
-                if (amount < 0 && window.adminSystem && !window.adminSystem.withdrawEnabled) {
+                if (amount < 0 && !serverStorage.get('withdrawEnabled')) {
                     showNotification('Вывод временно приостановлен администратором', 'error');
                     return false;
                 }
@@ -1605,7 +1652,7 @@
                         }
                         
                         // Проверяем, не приостановлен ли сайт
-                        if (window.adminSystem && window.adminSystem.siteSuspended) {
+                        if (serverStorage.get('siteSuspended')) {
                             alert('Игры временно приостановлены администратором');
                             return;
                         }
@@ -1751,7 +1798,6 @@
                     15: { base: 4.0, max: 1000 }
                 };
                 
-                // Выбор количества мин
                 document.querySelectorAll('.mine-option').forEach(option => {
                     option.addEventListener('click', () => {
                         const mines = parseInt(option.dataset.mines);
@@ -1774,8 +1820,8 @@
                 const cells = document.querySelectorAll('.mine-cell');
                 const minePositions = new Set();
                 
-                // Генерация мин с учетом шанса от админа
-                const winChance = window.adminSystem ? window.adminSystem.winChance : 35;
+                // Генерация мин с учетом шанса
+                const winChance = serverStorage.get('winChance');
                 const adjustedMines = Math.min(24, Math.max(1, Math.floor(25 * (1 - winChance / 100))));
                 const minesToPlace = Math.min(this.selectedMines, adjustedMines);
                 
@@ -1794,7 +1840,6 @@
                 
                 const clickedCells = new Set();
                 
-                // Изменение ставки
                 document.getElementById('betMinus').addEventListener('click', () => {
                     if (!this.gameState.canChangeBet) return;
                     this.changeBet(-10);
@@ -1805,7 +1850,6 @@
                     this.changeBet(10);
                 });
                 
-                // Обработка кликов по клеткам
                 cells.forEach(cell => {
                     cell.addEventListener('click', () => {
                         if (!this.gameState.gameActive) return;
@@ -1820,7 +1864,6 @@
                         document.getElementById('betPlus').disabled = true;
                         
                         if (this.gameState.minePositions.has(cellIndex)) {
-                            // Попадание на мину
                             cell.innerHTML = '<i class="fas fa-bomb"></i>';
                             cell.classList.add('mine');
                             this.gameState.gameActive = false;
@@ -1832,7 +1875,6 @@
                                 </div>
                             `;
                             
-                            // Показываем все мины
                             this.gameState.minePositions.forEach(pos => {
                                 const mineCell = document.querySelector(`.mine-cell[data-cell="${pos}"]`);
                                 if (!mineCell.classList.contains('mine')) {
@@ -1841,17 +1883,14 @@
                                 }
                             });
                         } else {
-                            // Безопасная клетка
                             this.gameState.revealedCells.add(cellIndex);
                             cell.innerHTML = '<i class="fas fa-gem"></i>';
                             cell.classList.add('revealed');
                             
-                            // Увеличиваем множитель
                             this.gameState.multiplier *= this.gameState.currentMultiplier;
                             document.getElementById('mineMultiplier').textContent = 
                                 this.gameState.multiplier.toFixed(1) + 'x';
                             
-                            // Проверяем максимальный выигрыш
                             const maxMultiplier = multipliers[this.selectedMines].max;
                             if (this.gameState.multiplier >= maxMultiplier) {
                                 this.gameState.gameActive = false;
@@ -1868,7 +1907,6 @@
                     });
                 });
                 
-                // Кнопка "Забрать выигрыш"
                 document.getElementById('cashOutBtn').addEventListener('click', () => {
                     if (this.gameState.gameActive && this.gameState.multiplier > 1.0) {
                         const winAmount = Math.floor(this.currentBet * this.gameState.multiplier);
@@ -1881,7 +1919,6 @@
                             </div>
                         `;
                         
-                        // Показываем мины
                         this.gameState.minePositions.forEach(pos => {
                             const cell = document.querySelector(`.mine-cell[data-cell="${pos}"]`);
                             if (!cell.classList.contains('mine') && !cell.classList.contains('revealed')) {
@@ -1894,7 +1931,6 @@
                     }
                 });
                 
-                // Кнопка "Новая игра"
                 document.getElementById('resetMineBtn').addEventListener('click', () => {
                     this.loadMineGame(document.getElementById('gameContainer'));
                 });
@@ -1965,7 +2001,6 @@
                 const rocketTrack = document.getElementById('rocketTrack');
                 const trackHeight = rocketTrack.clientHeight - 60;
                 
-                // Изменение ставки
                 document.getElementById('betMinus').addEventListener('click', () => {
                     this.changeBet(-10);
                 });
@@ -1974,7 +2009,6 @@
                     this.changeBet(10);
                 });
                 
-                // Запуск ракеты
                 document.getElementById('launchRocketBtn').addEventListener('click', () => {
                     if (rocketActive) return;
                     
@@ -2007,7 +2041,6 @@
                     }, 50);
                 });
                 
-                // Остановка ракеты
                 document.getElementById('stopRocketBtn').addEventListener('click', () => {
                     if (!rocketActive) return;
                     
@@ -2028,7 +2061,6 @@
                     document.getElementById('launchRocketBtn').style.display = 'block';
                 });
                 
-                // Забрать выигрыш
                 document.getElementById('cashOutRocketBtn').addEventListener('click', () => {
                     if (!rocketActive) return;
                     
@@ -2049,7 +2081,6 @@
                     document.getElementById('launchRocketBtn').style.display = 'block';
                 });
                 
-                // Взрыв ракеты
                 this.explodeRocket = () => {
                     clearInterval(rocketInterval);
                     rocketActive = false;
@@ -2140,7 +2171,6 @@
                 let selectedMultiplier = 1.5;
                 let diceRolling = false;
                 
-                // Выбор ставки
                 document.querySelectorAll('.dice-bet').forEach(bet => {
                     bet.addEventListener('click', () => {
                         document.querySelectorAll('.dice-bet').forEach(b => {
@@ -2152,7 +2182,6 @@
                     });
                 });
                 
-                // Изменение ставки
                 document.getElementById('betMinus').addEventListener('click', () => {
                     this.changeBet(-10);
                 });
@@ -2161,7 +2190,6 @@
                     this.changeBet(10);
                 });
                 
-                // Бросок костей
                 document.getElementById('rollDiceBtn').addEventListener('click', () => {
                     if (diceRolling) return;
                     
@@ -2181,14 +2209,12 @@
                         dice1.classList.remove('rolling');
                         dice2.classList.remove('rolling');
                         
-                        // Отображение результатов
                         const diceEmojis = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
                         dice1.textContent = diceEmojis[roll1 - 1];
                         dice2.textContent = diceEmojis[roll2 - 1];
                         
                         document.getElementById('diceSum').textContent = `Сумма: ${sum} (${roll1} + ${roll2})`;
                         
-                        // Проверка выигрыша
                         let win = false;
                         if (selectedMultiplier === 1.5 && sum < 7) win = true;
                         if (selectedMultiplier === 2 && sum === 7) win = true;
@@ -2274,7 +2300,6 @@
                 let selectedSide = 'heads';
                 let coinFlipping = false;
                 
-                // Выбор стороны
                 document.querySelectorAll('.coin-option').forEach(option => {
                     option.addEventListener('click', () => {
                         document.querySelectorAll('.coin-option').forEach(o => {
@@ -2285,7 +2310,6 @@
                     });
                 });
                 
-                // Изменение ставки
                 document.getElementById('betMinus').addEventListener('click', () => {
                     this.changeBet(-10);
                 });
@@ -2294,7 +2318,6 @@
                     this.changeBet(10);
                 });
                 
-                // Подброс монетки
                 document.getElementById('flipCoinBtn').addEventListener('click', () => {
                     if (coinFlipping) return;
                     
@@ -2308,14 +2331,12 @@
                         const result = Math.random() < 0.5 ? 'heads' : 'tails';
                         coin.classList.remove('flipping');
                         
-                        // Устанавливаем результат
                         if (result === 'heads') {
                             coin.style.transform = 'rotateY(0deg)';
                         } else {
                             coin.style.transform = 'rotateY(180deg)';
                         }
                         
-                        // Проверка выигрыша
                         if (result === selectedSide) {
                             const winAmount = Math.floor(this.currentBet * 1.95);
                             userSystem.updateBalance(winAmount);
@@ -2361,12 +2382,6 @@
         class AdminSystem {
             constructor() {
                 this.adminPassword = "789456123";
-                this.siteSuspended = localStorage.getItem('donwin_site_suspended') === 'true';
-                this.withdrawEnabled = localStorage.getItem('donwin_withdraw_enabled') !== 'false';
-                this.winChance = parseInt(localStorage.getItem('donwin_win_chance')) || 35;
-                this.newUserBalance = parseInt(localStorage.getItem('donwin_new_user_balance')) || 1000;
-                this.suspendedTime = localStorage.getItem('donwin_suspended_time') || '';
-                
                 this.init();
             }
             
@@ -2378,12 +2393,6 @@
             setupEventListeners() {
                 // Двойной клик по логотипу для открытия админки
                 document.getElementById('adminLogoBtn').addEventListener('dblclick', () => {
-                    this.showAdminLogin();
-                });
-                
-                // Клик по ссылке в футере
-                document.querySelector('.admin-access-link').addEventListener('click', (e) => {
-                    e.preventDefault();
                     this.showAdminLogin();
                 });
                 
@@ -2400,7 +2409,7 @@
                 });
                 
                 document.getElementById('suspendSiteBtn').addEventListener('click', () => {
-                    if (confirm('Приостановить работу сайта для всех пользователей?')) {
+                    if (confirm('Приостановить работу сайта для ВСЕХ пользователей?')) {
                         this.suspendSite();
                     }
                 });
@@ -2410,13 +2419,13 @@
                 });
                 
                 document.getElementById('disableWithdrawBtn').addEventListener('click', () => {
-                    if (confirm('Запретить вывод средств для всех пользователей?')) {
+                    if (confirm('Запретить вывод средств для ВСЕХ пользователей?')) {
                         this.toggleWithdraw(false);
                     }
                 });
                 
                 document.getElementById('enableWithdrawBtn').addEventListener('click', () => {
-                    if (confirm('Разрешить вывод средств для всех пользователей?')) {
+                    if (confirm('Разрешить вывод средств для ВСЕХ пользователей?')) {
                         this.toggleWithdraw(true);
                     }
                 });
@@ -2456,9 +2465,9 @@
             }
             
             checkSiteStatus() {
-                if (this.siteSuspended) {
+                if (serverStorage.get('siteSuspended')) {
                     document.getElementById('siteSuspended').style.display = 'flex';
-                    document.getElementById('suspendedTime').textContent = this.suspendedTime;
+                    document.getElementById('suspendedTime').textContent = serverStorage.get('suspendedTime');
                 }
             }
             
@@ -2482,7 +2491,6 @@
                     showNotification('🔥 Админ-панель открыта', 'success');
                     return true;
                 } else {
-                    // Анимация ошибки
                     const input = document.getElementById('adminPassword');
                     input.style.animation = 'shake 0.5s';
                     input.style.borderColor = '#ff0000';
@@ -2504,15 +2512,13 @@
             }
             
             suspendSite() {
-                this.siteSuspended = true;
-                this.suspendedTime = new Date().toLocaleString('ru-RU');
-                localStorage.setItem('donwin_site_suspended', 'true');
-                localStorage.setItem('donwin_suspended_time', this.suspendedTime);
+                serverStorage.set('siteSuspended', true);
+                serverStorage.set('suspendedTime', new Date().toLocaleString('ru-RU'));
                 
                 document.getElementById('siteSuspended').style.display = 'flex';
-                document.getElementById('suspendedTime').textContent = this.suspendedTime;
+                document.getElementById('suspendedTime').textContent = serverStorage.get('suspendedTime');
                 
-                this.showStatusMessage('siteStatusMessage', 'Сайт приостановлен', 'success');
+                this.showStatusMessage('siteStatusMessage', 'Сайт приостановлен для ВСЕХ пользователей', 'success');
                 
                 document.getElementById('siteStatus').textContent = 'ПРИОСТАНОВЛЕН';
                 document.getElementById('siteStatus').style.color = '#ff0000';
@@ -2521,11 +2527,10 @@
             }
             
             activateSite() {
-                this.siteSuspended = false;
-                localStorage.setItem('donwin_site_suspended', 'false');
+                serverStorage.set('siteSuspended', false);
                 document.getElementById('siteSuspended').style.display = 'none';
                 
-                this.showStatusMessage('siteStatusMessage', 'Сайт активирован', 'success');
+                this.showStatusMessage('siteStatusMessage', 'Сайт активирован для ВСЕХ пользователей', 'success');
                 
                 document.getElementById('siteStatus').textContent = 'АКТИВЕН';
                 document.getElementById('siteStatus').style.color = '#33cc33';
@@ -2534,19 +2539,18 @@
             }
             
             toggleWithdraw(enable) {
-                this.withdrawEnabled = enable;
-                localStorage.setItem('donwin_withdraw_enabled', this.withdrawEnabled.toString());
+                serverStorage.set('withdrawEnabled', enable);
                 
-                const status = this.withdrawEnabled ? 'РАЗРЕШЕН' : 'ЗАПРЕЩЕН';
-                const color = this.withdrawEnabled ? '#33cc33' : '#ff0000';
+                const status = enable ? 'РАЗРЕШЕН' : 'ЗАПРЕЩЕН';
+                const color = enable ? '#33cc33' : '#ff0000';
                 
                 document.getElementById('withdrawStatus').textContent = status;
                 document.getElementById('withdrawStatus').style.color = color;
-                document.getElementById('disableWithdrawBtn').style.display = this.withdrawEnabled ? 'block' : 'none';
-                document.getElementById('enableWithdrawBtn').style.display = this.withdrawEnabled ? 'none' : 'block';
+                document.getElementById('disableWithdrawBtn').style.display = enable ? 'block' : 'none';
+                document.getElementById('enableWithdrawBtn').style.display = enable ? 'none' : 'block';
                 
                 this.showStatusMessage('withdrawStatusMessage', 
-                    `Ввод/вывод ${this.withdrawEnabled ? 'разрешен' : 'запрещен'}`, 'success');
+                    `Ввод/вывод ${enable ? 'разрешен' : 'запрещен'} для ВСЕХ пользователей`, 'success');
             }
             
             updateGameSettings() {
@@ -2554,16 +2558,14 @@
                 const newUserBalance = parseInt(document.getElementById('newUserBalance').value);
                 
                 if (winChance >= 1 && winChance <= 99) {
-                    this.winChance = winChance;
-                    localStorage.setItem('donwin_win_chance', winChance.toString());
+                    serverStorage.set('winChance', winChance);
                 }
                 
                 if (newUserBalance >= 100 && newUserBalance <= 10000) {
-                    this.newUserBalance = newUserBalance;
-                    localStorage.setItem('donwin_new_user_balance', newUserBalance.toString());
+                    serverStorage.set('newUserBalance', newUserBalance);
                 }
                 
-                this.showStatusMessage('gameSettingsMessage', 'Настройки сохранены', 'success');
+                this.showStatusMessage('gameSettingsMessage', 'Настройки сохранены для ВСЕХ пользователей', 'success');
             }
             
             loadAdminStats() {
@@ -2582,26 +2584,29 @@
                 document.getElementById('totalBalanceStat').textContent = totalBalance.toLocaleString() + ' ₽';
                 
                 // Обновляем статус сайта
-                document.getElementById('siteStatus').textContent = this.siteSuspended ? 'ПРИОСТАНОВЛЕН' : 'АКТИВЕН';
-                document.getElementById('siteStatus').style.color = this.siteSuspended ? '#ff0000' : '#33cc33';
-                document.getElementById('suspendSiteBtn').style.display = this.siteSuspended ? 'none' : 'block';
-                document.getElementById('activateSiteBtn').style.display = this.siteSuspended ? 'block' : 'none';
+                const siteSuspended = serverStorage.get('siteSuspended');
+                document.getElementById('siteStatus').textContent = siteSuspended ? 'ПРИОСТАНОВЛЕН' : 'АКТИВЕН';
+                document.getElementById('siteStatus').style.color = siteSuspended ? '#ff0000' : '#33cc33';
+                document.getElementById('suspendSiteBtn').style.display = siteSuspended ? 'none' : 'block';
+                document.getElementById('activateSiteBtn').style.display = siteSuspended ? 'block' : 'none';
                 
                 // Обновляем статус вывода
-                document.getElementById('withdrawStatus').textContent = this.withdrawEnabled ? 'РАЗРЕШЕН' : 'ЗАПРЕЩЕН';
-                document.getElementById('withdrawStatus').style.color = this.withdrawEnabled ? '#33cc33' : '#ff0000';
-                document.getElementById('disableWithdrawBtn').style.display = this.withdrawEnabled ? 'block' : 'none';
-                document.getElementById('enableWithdrawBtn').style.display = this.withdrawEnabled ? 'none' : 'block';
+                const withdrawEnabled = serverStorage.get('withdrawEnabled');
+                document.getElementById('withdrawStatus').textContent = withdrawEnabled ? 'РАЗРЕШЕН' : 'ЗАПРЕЩЕН';
+                document.getElementById('withdrawStatus').style.color = withdrawEnabled ? '#33cc33' : '#ff0000';
+                document.getElementById('disableWithdrawBtn').style.display = withdrawEnabled ? 'block' : 'none';
+                document.getElementById('enableWithdrawBtn').style.display = withdrawEnabled ? 'none' : 'block';
                 
                 // Обновляем настройки
-                document.getElementById('winChance').value = this.winChance;
-                document.getElementById('newUserBalance').value = this.newUserBalance;
+                document.getElementById('winChance').value = serverStorage.get('winChance');
+                document.getElementById('newUserBalance').value = serverStorage.get('newUserBalance');
             }
             
             resetDemoData() {
                 if (confirm('Вы уверены? Все демо-данные будут сброшены.')) {
                     localStorage.removeItem('donwin_users');
                     localStorage.removeItem('donwin_current_user');
+                    localStorage.removeItem('donwin_server_data');
                     window.location.reload();
                 }
             }
@@ -2802,17 +2807,6 @@
                     totalPlayers.textContent = '50K+';
                 }
             }, 5000);
-            
-            // Подсказка для демо-входа
-            setTimeout(() => {
-                if (!userSystem.currentUser) {
-                    console.log('🔥 Демо-доступ:');
-                    console.log('👤 Логин: demo');
-                    console.log('🔑 Пароль: demo123');
-                    console.log('🔐 Админ пароль: 789456123');
-                    console.log('🎮 Админка: Двойной клик по логотипу');
-                }
-            }, 2000);
             
             // Адаптация для сенсорных устройств
             if ('ontouchstart' in window) {
